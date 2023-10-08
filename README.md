@@ -2,7 +2,6 @@
 
 Welcome to Pythonista, your ultimate playground for mastering the Python programming language through hands-on practice and problem-solving. Whether you're a beginner looking to learn Python from scratch or an experienced developer aiming to refine your Python skills, this repository is your one-stop destination.
 
-![Pythonista Logo](pythonista_logo.png)
 
 ## Table of Contents
 
@@ -32,18 +31,20 @@ To get started with Pythonista, follow these simple steps:
 
 Now, you're ready to embark on your Python learning journey.
 
-Usage
+## Usage
 Inside the repository, you'll find a well-organized structure. Problems are categorized by difficulty levels, and each problem has its dedicated directory.
 Navigate to a problem directory of your choice.
 Read the problem description in the README or markdown file.
 Solve the problem using Python and add your solution to the directory.
 You can also explore existing solutions for reference and compare your approach.
 Engage with the Pythonista community, share your thoughts, and learn from others.
-Contributing
+
+## Contributing
 We welcome contributions from Python enthusiasts like you! If you have an interesting Python problem or a creative solution to share, follow our Contribution Guidelines to contribute your work.
 
-License
+## License
 This project is licensed under the MIT License - see the LICENSE file for details.
+
 
 Let's master Python together! Happy Coding!
 
