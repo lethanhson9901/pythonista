@@ -1,14 +1,7 @@
 import torch
 import torch.nn as nn
 import math
-
-import torch
-import torch.nn as nn
-import math
-
-import math
-
-import math
+import torch.nn.functional as F
 
 class InputEmbeddings(nn.Module):
     def __init__(self, d_model: int, vocab_size: int) -> None:
@@ -174,3 +167,75 @@ class FeedForwardBlock(nn.Module):
         
         return x
 
+class MultiHeadAttentionBlock(nn.Module):
+    """
+    A MultiHeadAttentionBlock applies multi-head self-attention to input data.
+
+    Args:
+        embed_dim (int): Dimension of the input data.
+        num_heads (int): Number of attention heads.
+        dropout_prob (float): Dropout probability (e.g., 0.1 for 10% dropout).
+    """
+    def __init__(self, embed_dim, num_heads, dropout_prob=0.1):
+        super(MultiHeadAttentionBlock, self).__init()
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.embed_dim = embed_dim
+        
+        # Linear transformations for queries, keys, and values
+        self.W_q = nn.Linear(embed_dim, embed_dim)
+        self.W_k = nn.Linear(embed_dim, embed_dim)
+        self.W_v = nn.Linear(embed_dim, embed_dim)
+        
+        # Linear transformation for the output
+        self.W_o = nn.Linear(embed_dim, embed_dim)
+        
+        # Dropout layer
+        self.dropout = nn.Dropout(p=dropout_prob)
+        
+    def forward(self, x, mask=None):
+        """
+        Forward pass of the MultiHeadAttentionBlock module.
+
+        Args:
+            x (Tensor): Input tensor.
+            mask (Tensor, optional): Mask to apply to the attention scores (optional).
+
+        Returns:
+            Tensor: Multi-head self-attention output.
+        """
+        batch_size, seq_len, _ = x.size()
+        
+        # Linear transformations for queries, keys, and values
+        queries = self.W_q(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
+        keys = self.W_k(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
+        values = self.W_v(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
+        
+        # Transpose to prepare for matrix multiplication
+        queries = queries.permute(0, 2, 1, 3)
+        keys = keys.permute(0, 2, 3, 1)
+        values = values.permute(0, 2, 1, 3)
+        
+        # Calculate scaled dot-product attention
+        attention_scores = torch.matmul(queries, keys) / (self.head_dim ** 0.5)
+        
+        # Apply mask if provided
+        if mask is not None:
+            attention_scores = attention_scores.masked_fill(mask == 0, float('-inf'))
+        
+        # Apply softmax to get attention weights
+        attention_weights = F.softmax(attention_scores, dim=-1)
+        
+        # Apply dropout
+        attention_weights = self.dropout(attention_weights)
+        
+        # Weighted sum of values
+        attention_output = torch.matmul(attention_weights, values)
+        
+        # Transpose and reshape
+        attention_output = attention_output.permute(0, 2, 1, 3).contiguous().view(batch_size, seq_len, self.embed_dim)
+        
+        # Linear transformation for the output
+        multihead_output = self.W_o(attention_output)
+        
+        return multihead_output
