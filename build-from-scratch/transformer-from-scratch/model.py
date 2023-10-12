@@ -50,53 +50,127 @@ class InputEmbeddings(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model: int, seq_len: int, dropout: float) -> None:
-        """
-        Initialize the PositionalEncoding module.
+    """
+    PositionalEncoding adds positional information to input embeddings
+    for Transformer models.
 
-        Args:
-            d_model (int): Dimensionality of model embeddings.
-            seq_len (int): Maximum sequence length for positional encoding.
-            dropout (float): Dropout rate to apply to the output.
-
-        """
-        super().__init__()
-        self.d_model = d_model
-        self.seq_len = seq_len
-        self.dropout = nn.Dropout(dropout)
-
-        # Create a matrix of shape (seq_len, d_model) for positional encoding
-        pe = torch.zeros(seq_len, d_model)
-
-        # Create a vector of shape (seq_len) for position information
-        position = torch.arange(0, seq_len, dtype=torch.float).unsqueeze(1)  # (seq_len, 1)
-
-        # Create a vector of shape (d_model) for division terms
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))  # (d_model / 2)
-
-        # Apply sine to even indices of the positional encoding
-        pe[:, 0::2] = torch.sin(position * div_term)  # sin(position * (10000 ** (2i / d_model)))
-
-        # Apply cosine to odd indices of the positional encoding
-        pe[:, 1::2] = torch.cos(position * div_term)  # cos(position * (10000 ** (2i / d_model)))
-
-        # Add a batch dimension to the positional encoding
-        pe = pe.unsqueeze(0)  # (1, seq_len, d_model)
-
-        # Register the positional encoding as a buffer
+    Args:
+        d_model (int): Dimension of the model's embeddings.
+        max_seq_len (int): Maximum sequence length for which positional
+            encodings will be created (default is 512).
+    """
+    def __init__(self, d_model, max_seq_len=512):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(0.1)
+        
+        # Create a matrix to hold positional information
+        pe = torch.zeros(max_seq_len, d_model)
+        
+        # Create a list of numbers from 0 to max_seq_len
+        position = torch.arange(0, max_seq_len, dtype=torch.float32).unsqueeze(1)
+        
+        # Create a set of values that follow a pattern using sine and cosine
+        div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float32) * -(math.log(10000.0) / d_model))
+        
+        # Calculate positional encodings based on the pattern
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        
+        # Add a dimension to the positional encoding and make it a model buffer
+        pe = pe.unsqueeze(0)
         self.register_buffer('pe', pe)
-
+    
     def forward(self, x):
         """
-        Forward pass for the PositionalEncoding module.
+        Forward pass of the PositionalEncoding module.
 
         Args:
-            x (Tensor): Input tensor of shape (batch, seq_len, d_model).
+            x (Tensor): Input sequence with embeddings.
 
         Returns:
-            Tensor: Output tensor with positional encoding applied.
-
+            Tensor: Input sequence with positional encodings added.
         """
-        x = x + (self.pe[:, :x.shape[1], :]).requires_grad_(False)  # (batch, seq_len, d_model)
+        # Add the positional encoding to the input embeddings
+        x = x + self.pe[:, :x.size(1)]
         return self.dropout(x)
+    
+class LayerNormalization(nn.Module):
+    """
+    LayerNormalization applies layer-wise normalization to input activations.
+
+    Args:
+        features (int): Number of features (i.e., the dimensionality of the input).
+        eps (float): A small constant added for numerical stability (default is 1e-6).
+    """
+    def __init__(self, features, eps=1e-6):
+        super(LayerNormalization, self).__init__()
+        self.features = features
+        self.eps = eps
+        
+        # Learnable parameters for scaling and shifting
+        self.gamma = nn.Parameter(torch.ones(features))
+        self.beta = nn.Parameter(torch.zeros(features))
+    
+    def forward(self, x):
+        """
+        Forward pass of the LayerNormalization module.
+
+        Args:
+            x (Tensor): Input tensor of shape (batch_size, sequence_length, features).
+
+        Returns:
+            Tensor: Normalized output tensor.
+        """
+        # Calculate mean and standard deviation along the feature dimension
+        mean = x.mean(dim=-1, keepdim=True) #calculate the mean along the feature dimension
+        std = x.std(dim=-1, keepdim=True)
+        
+        # Apply layer normalization
+        normalized_x = self.gamma * (x - mean) / (std + self.eps) + self.beta
+        
+        return normalized_x
+
+class FeedForwardBlock(nn.Module):
+    """
+    A FeedForwardBlock applies a feed-forward transformation to input data.
+
+    Args:
+        input_dim (int): Dimension of the input data.
+        hidden_dim (int): Dimension of the hidden layer.
+        dropout_prob (float): Dropout probability (e.g., 0.1 for 10% dropout).
+    """
+    def __init__(self, input_dim, hidden_dim, dropout_prob=0.1):
+        super(FeedForwardBlock, self).__init()
+        
+        # First linear layer with ReLU activation
+        self.linear1 = nn.Linear(input_dim, hidden_dim)
+        self.relu = nn.ReLU()
+        
+        # Dropout layer
+        self.dropout = nn.Dropout(p=dropout_prob)
+        
+        # Second linear layer
+        self.linear2 = nn.Linear(hidden_dim, input_dim)
+    
+    def forward(self, x):
+        """
+        Forward pass of the FeedForwardBlock module.
+
+        Args:
+            x (Tensor): Input tensor.
+
+        Returns:
+            Tensor: Transformed output tensor.
+        """
+        # Apply the first linear layer and ReLU activation
+        x = self.linear1(x)
+        x = self.relu(x)
+        
+        # Apply dropout: prevent overfitting and improve the generalization of the model
+        x = self.dropout(x)
+        
+        # Apply the second linear layer
+        x = self.linear2(x)
+        
+        return x
 
