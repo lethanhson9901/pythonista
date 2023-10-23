@@ -182,7 +182,8 @@ class MultiHeadAttentionBlock(nn.Module):
         self.head_dim = embed_dim // num_heads
         self.embed_dim = embed_dim
         
-        # Linear transformations for queries, keys, and values
+        # Linear transformations for queries, keys, and values project the input x into different subspaces, 
+        # creating different sets of queries, keys, and values for each attention head.
         self.W_q = nn.Linear(embed_dim, embed_dim)
         self.W_k = nn.Linear(embed_dim, embed_dim)
         self.W_v = nn.Linear(embed_dim, embed_dim)
@@ -204,9 +205,13 @@ class MultiHeadAttentionBlock(nn.Module):
         Returns:
             Tensor: Multi-head self-attention output.
         """
+
+        #  where batch_size is the number of sequences in a batch, 
+        # seq_len is the length of each sequence,
+        #  _ denotes the feature dimension, which can vary depending on the problem.
         batch_size, seq_len, _ = x.size()
         
-        # Linear transformations for queries, keys, and values
+        # Linear transformations for queries, keys, and values. Each tensor has dimensions of (batch_size, seq_len, num_heads, head_dim).
         queries = self.W_q(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
         keys = self.W_k(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
         values = self.W_v(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
