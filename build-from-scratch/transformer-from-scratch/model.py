@@ -244,3 +244,220 @@ class MultiHeadAttentionBlock(nn.Module):
         multihead_output = self.W_o(attention_output)
         
         return multihead_output
+
+
+class ResidualConnection(nn.Module):
+    """
+    A ResidualConnection module combines a sub-layer's output with the original input using layer normalization.
+
+    Args:
+        sublayer (nn.Module): The sub-layer to apply.
+        d_model (int): The dimension of the model.
+        dropout (float): Dropout probability (default is 0.1).
+    """
+    def __init__(self, sublayer, d_model, dropout=0.1):
+        super(ResidualConnection, self).__init__()
+        self.sublayer = sublayer
+        self.layer_norm = LayerNormalization(d_model)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, *args, **kwargs):
+        """
+        Forward pass of the ResidualConnection module.
+
+        Args:
+            x (Tensor): The input tensor.
+            *args: Additional arguments for the sub-layer.
+            **kwargs: Additional keyword arguments for the sub-layer.
+
+        Returns:
+            Tensor: The output tensor with the residual connection applied.
+        """
+        sublayer_output = self.sublayer(x, *args, **kwargs)
+        normalized_output = self.layer_norm(x + self.dropout(sublayer_output))
+        return normalized_output
+
+class EncoderBlock(nn.Module):
+    """
+    An EncoderBlock consists of a Multi-Head Self-Attention layer and a Feed-Forward Block.
+
+    Args:
+        embed_dim (int): Dimension of the input data.
+        num_heads (int): Number of attention heads.
+        hidden_dim (int): Dimension of the hidden layer in the feed-forward block.
+        dropout_prob (float): Dropout probability (e.g., 0.1 for 10% dropout).
+    """
+    def __init__(self, embed_dim, num_heads, hidden_dim, dropout_prob=0.1):
+        super(EncoderBlock, self).__init()
+        self.self_attention = MultiHeadAttentionBlock(embed_dim, num_heads, dropout_prob)
+        self.feed_forward = FeedForwardBlock(embed_dim, hidden_dim, dropout_prob)
+        self.residual_connection_attention = ResidualConnection(self.self_attention, embed_dim, dropout_prob)
+        self.residual_connection_feed_forward = ResidualConnection(self.feed_forward, embed_dim, dropout_prob)
+
+    def forward(self, x, mask=None):
+        """
+        Forward pass of the EncoderBlock module.
+
+        Args:
+            x (Tensor): Input tensor.
+            mask (Tensor, optional): Mask to apply to the attention scores (optional).
+
+        Returns:
+            Tensor: Output of the EncoderBlock.
+        """
+        # Apply multi-head self-attention with residual connection and layer normalization
+        attention_output = self.residual_connection_attention(x, mask=mask)
+        
+        # Apply feed-forward block with residual connection and layer normalization
+        encoder_output = self.residual_connection_feed_forward(attention_output)
+        
+        return encoder_output
+
+class Encoder(nn.Module):
+    """
+    The Encoder is composed of a stack of EncoderBlocks.
+
+    Args:
+        num_blocks (int): Number of EncoderBlocks in the stack.
+        embed_dim (int): Dimension of the input data.
+        num_heads (int): Number of attention heads in each EncoderBlock.
+        hidden_dim (int): Dimension of the hidden layer in the feed-forward block.
+        vocab_size (int): Vocabulary size for the input.
+        max_seq_len (int): Maximum sequence length (default is 512).
+        dropout_prob (float): Dropout probability (e.g., 0.1 for 10% dropout).
+    """
+    def __init__(self, num_blocks, embed_dim, num_heads, hidden_dim, vocab_size, max_seq_len=512, dropout_prob=0.1):
+        super(Encoder, self).__init()
+        self.embedding = InputEmbeddings(embed_dim, vocab_size)
+        self.positional_encoding = PositionalEncoding(embed_dim, max_seq_len)
+        self.blocks = nn.ModuleList([EncoderBlock(embed_dim, num_heads, hidden_dim, dropout_prob) for _ in range(num_blocks)])
+
+    def forward(self, x, mask=None):
+        """
+        Forward pass of the Encoder module.
+
+        Args:
+            x (Tensor): Input tensor.
+            mask (Tensor, optional): Mask to apply to the attention scores (optional).
+
+        Returns:
+            Tensor: Output of the Encoder.
+        """
+        # Apply input embeddings and positional encodings
+        embedded_input = self.positional_encoding(self.embedding(x))
+        
+        # Apply the stack of EncoderBlocks
+        for block in self.blocks:
+            embedded_input = block(embedded_input, mask=mask)
+        
+        return embedded_input
+
+class DecoderBlock(nn.Module):
+    """
+    A DecoderBlock in the Transformer architecture consists of masked multi-head self-attention,
+    encoder-decoder multi-head attention, and a feed-forward block.
+
+    Args:
+        embed_dim (int): Dimension of the input data.
+        num_heads (int): Number of attention heads.
+        hidden_dim (int): Dimension of the hidden layer in the feed-forward block.
+        dropout_prob (float): Dropout probability (e.g., 0.1 for 10% dropout).
+    """
+    def __init__(self, embed_dim, num_heads, hidden_dim, dropout_prob=0.1):
+        super(DecoderBlock, self).__init()
+        self.self_attention = MultiHeadAttentionBlock(embed_dim, num_heads, dropout_prob)
+        self.encoder_decoder_attention = MultiHeadAttentionBlock(embed_dim, num_heads, dropout_prob)
+        self.feed_forward = FeedForwardBlock(embed_dim, hidden_dim, dropout_prob)
+        self.residual_connection_self_attention = ResidualConnection(self.self_attention, embed_dim, dropout_prob)
+        self.residual_connection_encoder_decoder_attention = ResidualConnection(self.encoder_decoder_attention, embed_dim, dropout_prob)
+        self.residual_connection_feed_forward = ResidualConnection(self.feed_forward, embed_dim, dropout_prob)
+    
+    def forward(self, x, encoder_output, self_mask=None, encoder_decoder_mask=None):
+        """
+        Forward pass of the DecoderBlock module.
+
+        Args:
+            x (Tensor): Input tensor.
+            encoder_output (Tensor): Output from the encoder.
+            self_mask (Tensor, optional): Mask to apply to the self-attention scores (optional).
+            encoder_decoder_mask (Tensor, optional): Mask to apply to the encoder-decoder attention scores (optional).
+
+        Returns:
+            Tensor: Output of the DecoderBlock.
+        """
+        # Apply masked self-attention with residual connection and layer normalization
+        self_attention_output = self.residual_connection_self_attention(x, mask=self_mask)
+        
+        # Apply encoder-decoder attention with residual connection and layer normalization
+        encoder_decoder_attention_output = self.residual_connection_encoder_decoder_attention(self_attention_output, encoder_output, mask=encoder_decoder_mask)
+        
+        # Apply feed-forward block with residual connection and layer normalization
+        decoder_output = self.residual_connection_feed_forward(encoder_decoder_attention_output)
+        
+        return decoder_output
+
+class Decoder(nn.Module):
+    """
+    The Decoder in the Transformer architecture is composed of a stack of DecoderBlocks.
+
+    Args:
+        num_blocks (int): Number of DecoderBlocks in the stack.
+        embed_dim (int): Dimension of the input data.
+        num_heads (int): Number of attention heads in each DecoderBlock.
+        hidden_dim (int): Dimension of the hidden layer in the feed-forward block.
+        vocab_size (int): Vocabulary size for the output.
+        max_seq_len (int): Maximum sequence length (default is 512).
+        dropout_prob (float): Dropout probability (e.g., 0.1 for 10% dropout).
+    """
+    def __init__(self, num_blocks, embed_dim, num_heads, hidden_dim, vocab_size, max_seq_len=512, dropout_prob=0.1):
+        super(Decoder, self).__init()
+        self.embedding = InputEmbeddings(embed_dim, vocab_size)
+        self.positional_encoding = PositionalEncoding(embed_dim, max_seq_len)
+        self.blocks = nn.ModuleList([DecoderBlock(embed_dim, num_heads, hidden_dim, dropout_prob) for _ in range(num_blocks)])
+    
+    def forward(self, x, encoder_output, self_mask=None, encoder_decoder_mask=None):
+        """
+        Forward pass of the Decoder module.
+
+        Args:
+            x (Tensor): Input tensor.
+            encoder_output (Tensor): Output from the encoder.
+            self_mask (Tensor, optional): Mask to apply to the self-attention scores (optional).
+            encoder_decoder_mask (Tensor, optional): Mask to apply to the encoder-decoder attention scores (optional).
+
+        Returns:
+            Tensor: Output of the Decoder.
+        """
+        # Apply input embeddings and positional encodings
+        embedded_input = self.positional_encoding(self.embedding(x))
+        
+        # Apply the stack of DecoderBlocks
+        for block in self.blocks:
+            embedded_input = block(embedded_input, encoder_output, self_mask=self_mask, encoder_decoder_mask=encoder_decoder_mask)
+        
+        return embedded_input
+
+class ProjectionLayer(nn.Module):
+    """
+    A ProjectionLayer in the Transformer architecture projects decoder output to the output vocabulary space.
+
+    Args:
+        embed_dim (int): Dimension of the input data.
+        vocab_size (int): Vocabulary size for the output.
+    """
+    def __init__(self, embed_dim, vocab_size):
+        super(ProjectionLayer, self).__init()
+        self.embedding = nn.Linear(embed_dim, vocab_size)
+    
+    def forward(self, x):
+        """
+        Forward pass of the ProjectionLayer module.
+
+        Args:
+            x (Tensor): Input tensor representing decoder output.
+
+        Returns:
+            Tensor: Output tensor with vocabulary distribution.
+        """
+        output_distribution = self.embedding(x)
+        return output_distribution
